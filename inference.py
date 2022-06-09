@@ -1,4 +1,5 @@
 from os import listdir, path
+import time
 import numpy as np
 import scipy, cv2, os, sys, argparse, audio
 import json, subprocess, random, string
@@ -15,6 +16,8 @@ parser.add_argument('--checkpoint_path', type=str,
 
 parser.add_argument('--face', type=str, 
 					help='Filepath of video/image that contains faces to use', required=True)
+parser.add_argument('--face_data', type=str, 
+					help='Load face detect result from local npy file')		
 parser.add_argument('--audio', type=str, 
 					help='Filepath of video/audio file to use as raw audio source', required=True)
 parser.add_argument('--outfile', type=str, help='Video path to save result. See default for an e.g.', 
@@ -66,11 +69,13 @@ def get_smoothened_boxes(boxes, T):
 	return boxes
 
 def face_detect(images):
+	print("start face_detection face alignment: %f"%(time.time()))
 	detector = face_detection.FaceAlignment(face_detection.LandmarksType._2D, 
 											flip_input=False, device=device)
 
 	batch_size = args.face_det_batch_size
 	
+	print("start face_detection prediction: %f"%(time.time()))
 	while 1:
 		predictions = []
 		try:
@@ -84,6 +89,8 @@ def face_detect(images):
 			continue
 		break
 
+	print("face_detection prediction end: %f"%(time.time()))
+	
 	results = []
 	pady1, pady2, padx1, padx2 = args.pads
 	for rect, image in zip(predictions, images):
@@ -107,17 +114,23 @@ def face_detect(images):
 
 def datagen(frames, mels):
 	img_batch, mel_batch, frame_batch, coords_batch = [], [], [], []
+	print("start datagen:%f"%(time.time()))
 
-	if args.box[0] == -1:
-		if not args.static:
-			face_det_results = face_detect(frames) # BGR2RGB for CNN face detection
+	if args.face_data:
+		face_det_results = np.load(args.face_data, allow_pickle=True)
+	else:		
+		if args.box[0] == -1:
+			if not args.static:
+				face_det_results = face_detect(frames) # BGR2RGB for CNN face detection
+			else:
+				face_det_results = face_detect([frames[0]])
 		else:
-			face_det_results = face_detect([frames[0]])
-	else:
-		print('Using the specified bounding box instead of face detection...')
-		y1, y2, x1, x2 = args.box
-		face_det_results = [[f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]
+			print('Using the specified bounding box instead of face detection...')
+			y1, y2, x1, x2 = args.box
+			face_det_results = [[f[y1: y2, x1:x2], (y1, y2, x1, x2)] for f in frames]
 
+
+	print("start emumerate mels:%f"%(time.time()))
 	for i, m in enumerate(mels):
 		idx = 0 if args.static else i%len(frames)
 		frame_to_save = frames[idx].copy()
@@ -245,9 +258,11 @@ def main():
 
 	batch_size = args.wav2lip_batch_size
 	gen = datagen(full_frames.copy(), mel_chunks)
+	frame_num = 0
 
 	for i, (img_batch, mel_batch, frames, coords) in enumerate(tqdm(gen, 
 											total=int(np.ceil(float(len(mel_chunks))/batch_size)))):
+		print("enum: %d order, time:%f" %(i, time.time()))
 		if i == 0:
 			model = load_model(args.checkpoint_path)
 			print ("Model loaded")
@@ -266,7 +281,10 @@ def main():
 		
 		for p, f, c in zip(pred, frames, coords):
 			y1, y2, x1, x2 = c
-			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+			pred_file = "temp/img"+str(frame_num)+".jpg"
+			frame_num = frame_num + 1
+			cv2.imwrite(pred_file, p)
+			# p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
 
 			f[y1:y2, x1:x2] = p
 			out.write(f)
