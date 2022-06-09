@@ -281,10 +281,10 @@ def main():
 		
 		for p, f, c in zip(pred, frames, coords):
 			y1, y2, x1, x2 = c
-			pred_file = "temp/img"+str(frame_num)+".jpg"
-			frame_num = frame_num + 1
-			cv2.imwrite(pred_file, p)
-			# p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
+			# pred_file = "temp/img"+str(frame_num)+".jpg"
+			# frame_num = frame_num + 1
+			# cv2.imwrite(pred_file, p)
+			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
 
 			f[y1:y2, x1:x2] = p
 			out.write(f)
